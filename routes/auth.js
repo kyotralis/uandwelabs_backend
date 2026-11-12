@@ -3,6 +3,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { UserModel } from '../models/userModel.js';
 import { generateToken, verifyToken } from '../middleware/auth.js';
 import { sendOtpEmail } from '../services/emailService.js';
+import { readQuery, writeQuery } from '../config/neo4j.js';
 
 const router = Router();
 
@@ -12,6 +13,101 @@ const pendingOtpStore = new Map();
 // Helper to generate 6-digit cryptographic-grade OTP
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Database-backed + In-Memory OTP helpers for resilient Vercel Serverless operation
+async function savePendingOtp(email, otp, profile, expiresAt) {
+  pendingOtpStore.set(email, {
+    otp,
+    profile,
+    expiresAt,
+    attempts: 0,
+  });
+
+  try {
+    const cypher = `
+      MERGE (o:OtpVerification { email: $email })
+      SET o.otp = $otp,
+          o.name = $name,
+          o.picture = $picture,
+          o.googleId = $googleId,
+          o.expiresAt = $expiresAt,
+          o.attempts = 0,
+          o.updatedAt = datetime()
+    `;
+    await writeQuery(cypher, {
+      email,
+      otp,
+      name: profile.name || '',
+      picture: profile.picture || '',
+      googleId: profile.googleId || '',
+      expiresAt: Number(expiresAt),
+    });
+  } catch (err) {
+    console.warn('[OTP DB Save Fallback]:', err.message);
+  }
+}
+
+async function getPendingOtp(email) {
+  let record = pendingOtpStore.get(email);
+  if (record) return record;
+
+  try {
+    const cypher = `
+      MATCH (o:OtpVerification { email: $email })
+      RETURN o {
+        .otp,
+        .name,
+        .picture,
+        .googleId,
+        .expiresAt,
+        .attempts
+      } AS data
+      LIMIT 1
+    `;
+    const records = await readQuery(cypher, { email });
+    if (records && records.length > 0) {
+      const data = records[0].get('data');
+      record = {
+        otp: data.otp,
+        profile: {
+          email,
+          name: data.name,
+          picture: data.picture,
+          googleId: data.googleId,
+        },
+        expiresAt: Number(data.expiresAt),
+        attempts: Number(data.attempts || 0),
+      };
+      pendingOtpStore.set(email, record);
+      return record;
+    }
+  } catch (err) {
+    console.warn('[OTP DB Read Fallback]:', err.message);
+  }
+  return null;
+}
+
+async function deletePendingOtp(email) {
+  pendingOtpStore.delete(email);
+  try {
+    await writeQuery(`MATCH (o:OtpVerification { email: $email }) DELETE o`, { email });
+  } catch (err) {
+    console.warn('[OTP DB Delete Fallback]:', err.message);
+  }
+}
+
+async function incrementOtpAttempts(email, record) {
+  record.attempts += 1;
+  pendingOtpStore.set(email, record);
+  try {
+    await writeQuery(
+      `MATCH (o:OtpVerification { email: $email }) SET o.attempts = o.attempts + 1`,
+      { email }
+    );
+  } catch (err) {
+    // ignore
+  }
 }
 
 // Clean up expired OTPs periodically (every 60s)
@@ -106,14 +202,10 @@ router.post('/google', async (req, res) => {
     // Generate 6-digit OTP verification code
     const otp = generateOtp();
     const normalizedEmail = googleProfile.email.toLowerCase();
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
-    // Store in pending verification registry (expires in 5 minutes)
-    pendingOtpStore.set(normalizedEmail, {
-      otp,
-      profile: googleProfile,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-      attempts: 0,
-    });
+    // Store in pending verification registry (Database-backed for Vercel serverless + memory cache)
+    await savePendingOtp(normalizedEmail, otp, googleProfile, expiresAt);
 
     // Dispatch email via Gmail SMTP / Fallback logger
     await sendOtpEmail(googleProfile.email, otp, googleProfile.name);
@@ -151,7 +243,7 @@ router.post('/verify-otp', async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const record = pendingOtpStore.get(normalizedEmail);
+    const record = await getPendingOtp(normalizedEmail);
 
     if (!record) {
       return res.status(400).json({
@@ -161,7 +253,7 @@ router.post('/verify-otp', async (req, res) => {
     }
 
     if (record.expiresAt < Date.now()) {
-      pendingOtpStore.delete(normalizedEmail);
+      await deletePendingOtp(normalizedEmail);
       return res.status(400).json({
         success: false,
         message: 'Verification code has expired. Please request a new code.',
@@ -169,7 +261,7 @@ router.post('/verify-otp', async (req, res) => {
     }
 
     if (record.attempts >= 5) {
-      pendingOtpStore.delete(normalizedEmail);
+      await deletePendingOtp(normalizedEmail);
       return res.status(429).json({
         success: false,
         message: 'Too many incorrect attempts. Please sign in again.',
@@ -177,8 +269,8 @@ router.post('/verify-otp', async (req, res) => {
     }
 
     if (record.otp !== String(otp).trim()) {
-      record.attempts += 1;
-      const remaining = 5 - record.attempts;
+      await incrementOtpAttempts(normalizedEmail, record);
+      const remaining = 5 - (record.attempts);
       return res.status(400).json({
         success: false,
         message: `Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Please request a new code.'}`,
@@ -186,7 +278,7 @@ router.post('/verify-otp', async (req, res) => {
     }
 
     // OTP is valid! Remove from pending store
-    pendingOtpStore.delete(normalizedEmail);
+    await deletePendingOtp(normalizedEmail);
 
     // Persist or link in Neo4j graph database
     const user = await UserModel.findOrCreateGoogleUser({
@@ -235,7 +327,7 @@ router.post('/resend-otp', async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const record = pendingOtpStore.get(normalizedEmail);
+    const record = await getPendingOtp(normalizedEmail);
 
     if (!record) {
       return res.status(400).json({
@@ -246,9 +338,8 @@ router.post('/resend-otp', async (req, res) => {
 
     // Generate fresh OTP and reset window
     const newOtp = generateOtp();
-    record.otp = newOtp;
-    record.expiresAt = Date.now() + 5 * 60 * 1000;
-    record.attempts = 0;
+    const newExpiresAt = Date.now() + 5 * 60 * 1000;
+    await savePendingOtp(normalizedEmail, newOtp, record.profile, newExpiresAt);
 
     await sendOtpEmail(record.profile.email, newOtp, record.profile.name, true);
 
@@ -439,4 +530,3 @@ router.post('/logout', (req, res) => {
 });
 
 export default router;
-
