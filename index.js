@@ -9,39 +9,30 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS configuration (allow Vite frontend and Vercel domains)
+// CORS configuration (allow Vite frontend and production domains)
 const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:5173',
   'https://uandwelabs.vercel.app',
+  'https://uandwelabs-backend.vercel.app',
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin, matched origin, or any Vercel domain
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      // Allow requests with no origin (like mobile apps, curl, postman)
+      if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(null, true);
+      return callback(null, true); // Dev mode: allow all local origins
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Root welcome endpoint
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'UandWe Labs Backend API is running smoothly 🚀',
-  });
-});
 
 // Health & Status endpoint
 app.get('/api/health', (req, res) => {
@@ -105,3 +96,4 @@ process.on('SIGTERM', async () => {
 });
 
 export default app;
+
