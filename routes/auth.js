@@ -31,6 +31,7 @@ async function savePendingOtp(email, otp, profile, expiresAt) {
           o.name = $name,
           o.picture = $picture,
           o.googleId = $googleId,
+          o.selectedProduct = $selectedProduct,
           o.expiresAt = $expiresAt,
           o.attempts = 0,
           o.updatedAt = datetime()
@@ -41,6 +42,7 @@ async function savePendingOtp(email, otp, profile, expiresAt) {
       name: profile.name || '',
       picture: profile.picture || '',
       googleId: profile.googleId || '',
+      selectedProduct: profile.selectedProduct || 'ananda',
       expiresAt: Number(expiresAt),
     });
   } catch (err) {
@@ -60,6 +62,7 @@ async function getPendingOtp(email) {
         .name,
         .picture,
         .googleId,
+        .selectedProduct,
         .expiresAt,
         .attempts
       } AS data
@@ -75,6 +78,7 @@ async function getPendingOtp(email) {
           name: data.name,
           picture: data.picture,
           googleId: data.googleId,
+          selectedProduct: data.selectedProduct || 'ananda',
         },
         expiresAt: Number(data.expiresAt),
         attempts: Number(data.attempts || 0),
@@ -127,13 +131,16 @@ setInterval(() => {
  */
 router.post('/google', async (req, res) => {
   try {
-    const { credential, access_token, email, name, picture, avatar, googleId } = req.body;
+    const { credential, access_token, email, name, picture, avatar, googleId, product } = req.body;
+
+    const targetProduct = product || 'ananda';
 
     let googleProfile = {
       email,
       name,
       picture: picture || avatar,
       googleId,
+      selectedProduct: targetProduct,
     };
 
     // If an access_token is provided and email is not yet present, fetch from Google UserInfo endpoint
@@ -149,6 +156,7 @@ router.post('/google', async (req, res) => {
             name: uInfo.name || uInfo.email?.split('@')[0],
             picture: uInfo.picture || googleProfile.picture,
             googleId: uInfo.sub,
+            selectedProduct: targetProduct,
           };
         }
       } catch (tokenErr) {
@@ -170,6 +178,7 @@ router.post('/google', async (req, res) => {
           name: payload.name || payload.given_name || payload.email.split('@')[0],
           picture: payload.picture,
           googleId: payload.sub,
+          selectedProduct: targetProduct,
         };
       } catch (verifyErr) {
         console.warn('[Google Auth Verification Warning]:', verifyErr.message);
@@ -185,6 +194,7 @@ router.post('/google', async (req, res) => {
             name: payload.name || name || payload.email?.split('@')[0],
             picture: payload.picture || picture,
             googleId: payload.sub || googleId,
+            selectedProduct: targetProduct,
           };
         }
       } catch (err) {
@@ -237,7 +247,7 @@ router.post('/google', async (req, res) => {
  */
 router.post('/verify-otp', async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, product } = req.body;
 
     if (!email || !otp) {
       return res.status(400).json({
@@ -284,12 +294,15 @@ router.post('/verify-otp', async (req, res) => {
     // OTP is valid! Remove from pending store
     await deletePendingOtp(normalizedEmail);
 
-    // Persist or link in Neo4j graph database
+    const targetProduct = product || record.profile?.selectedProduct || 'ananda';
+
+    // Persist or link in Neo4j graph database with selected product
     const user = await UserModel.findOrCreateGoogleUser({
       email: record.profile.email,
       name: record.profile.name,
       avatar: record.profile.picture,
       googleId: record.profile.googleId,
+      selectedProduct: targetProduct,
     });
 
     // Generate authenticated JWT session token
@@ -368,7 +381,7 @@ router.post('/resend-otp', async (req, res) => {
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, product } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -393,11 +406,14 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Create user in Neo4j
+    const selectedProduct = product || 'ananda';
+
+    // Create user in Neo4j with selected product
     const newUser = await UserModel.create({
       email,
       password,
       name: name || email.split('@')[0],
+      selectedProduct,
     });
 
     // Generate JWT token
@@ -416,6 +432,7 @@ router.post('/register', async (req, res) => {
         email: newUser.email,
         name: newUser.name,
         role: newUser.role,
+        selectedProduct: newUser.selectedProduct || selectedProduct,
         createdAt: newUser.createdAt,
       },
     });
@@ -436,7 +453,7 @@ router.post('/register', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, product } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -463,6 +480,10 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Update user's active product workspace in Neo4j
+    const targetProduct = product || user.selectedProduct || 'ananda';
+    await UserModel.updateSelectedProduct(user.id, targetProduct);
+
     // Generate JWT token
     const token = generateToken({
       id: user.id,
@@ -479,6 +500,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        selectedProduct: targetProduct,
         createdAt: user.createdAt,
       },
     });
