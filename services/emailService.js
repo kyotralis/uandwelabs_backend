@@ -96,37 +96,37 @@ export async function sendOtpEmail(toEmail, otpCode, userName = 'there', isResen
 
   const textContent = `${isResend ? 'Updated Code: ' : ''}Your UandWe Labs verification code is: ${otpCode}. It expires in 5 minutes. If you did not request this, please disregard.`;
 
-  if (mailer) {
-    try {
-      const fromSender = process.env.EMAIL_FROM || `"UandWe Labs Security" <${process.env.EMAIL_USER}>`;
-      const info = await mailer.sendMail({
-        from: fromSender,
-        to: toEmail,
-        subject: emailSubject,
-        text: textContent,
-        html: htmlContent,
-      });
+if (!mailer) {
+  throw new Error(
+    'Email service is not configured. Check EMAIL_USER and EMAIL_PASS.'
+  );
+}
 
-      console.log(`[Email Service] ${isResend ? 'Resent' : 'Sent'} OTP successfully to ${toEmail}. MessageId: ${info.messageId}`);
-      return { delivered: true, messageId: info.messageId };
-    } catch (err) {
-      console.error(`[Email Service Warning] Failed to send email to ${toEmail} via SMTP:`, err.message);
-      // Fallback: log code in terminal so user can proceed in dev/test
-      console.log(`\n======================================================`);
-      console.log(`[FALLBACK DEV OTP CODE ${isResend ? '(RESENT)' : ''}] For ${toEmail}: ${otpCode}`);
-      console.log(`======================================================\n`);
-      return { delivered: false, error: err.message };
-    }
-  } else {
-    // No SMTP credentials in .env yet: print directly to server console
-    console.log(`\n======================================================`);
-    console.log(`[UANDWELABS OTP DEV CODE ${isResend ? '(RESENT)' : ''}]`);
-    console.log(`Email: ${toEmail}`);
-    console.log(`Code:  ${otpCode}`);
-    console.log(`Expires in: 5 minutes`);
-    console.log(`(Configure EMAIL_USER and EMAIL_PASS in server/.env to send real emails via Gmail)`);
-    console.log(`======================================================\n`);
-    return { delivered: false, simulated: true };
-  }
+try {
+  const fromSender =
+    process.env.EMAIL_FROM ||
+    `"UandWe Labs Security" <${process.env.EMAIL_USER}>`;
+
+  const info = await mailer.sendMail({
+    from: fromSender,
+    to: toEmail,
+    subject: emailSubject,
+    text: textContent,
+    html: htmlContent,
+  });
+
+  console.log(
+    `[Email Service] OTP sent successfully. MessageId: ${info.messageId}`
+  );
+
+  return {
+    delivered: true,
+    messageId: info.messageId,
+  };
+
+} catch (err) {
+  console.error('[Email Service Error]:', err.message);
+  throw err;
+}
 }
 
