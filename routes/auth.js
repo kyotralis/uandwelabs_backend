@@ -207,8 +207,12 @@ router.post('/google', async (req, res) => {
     // Store in pending verification registry (Database-backed for Vercel serverless + memory cache)
     await savePendingOtp(normalizedEmail, otp, googleProfile, expiresAt);
 
-    // Dispatch email via Gmail SMTP / Fallback logger
-    await sendOtpEmail(googleProfile.email, otp, googleProfile.name);
+    // Send 6-digit OTP verification email
+    try {
+      await sendOtpEmail(googleProfile.email, otp, googleProfile.name, false);
+    } catch (emailErr) {
+      console.warn('[Google Auth OTP Email Warning]:', emailErr.message);
+    }
 
     return res.json({
       success: true,
@@ -220,7 +224,7 @@ router.post('/google', async (req, res) => {
     console.error('[Google Auth Error]:', error);
     return res.status(500).json({
       success: false,
-      message: 'Google authorization failed. Check database connection.',
+      message: 'Failed to process Google sign-in.',
       error: error.message,
     });
   }
