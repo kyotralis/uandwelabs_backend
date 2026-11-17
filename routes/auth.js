@@ -214,15 +214,13 @@ router.post('/google', async (req, res) => {
     const normalizedEmail = googleProfile.email.toLowerCase();
     const expiresAt = Date.now() + 5 * 60 * 1000;
 
-    // Store in pending verification registry (Database-backed for Vercel serverless + memory cache)
-    await savePendingOtp(normalizedEmail, otp, googleProfile, expiresAt);
-
-    // Send 6-digit OTP verification email
-    try {
-      await sendOtpEmail(googleProfile.email, otp, googleProfile.name, false);
-    } catch (emailErr) {
-      console.warn('[Google Auth OTP Email Warning]:', emailErr.message);
-    }
+    // Run database write and SMTP email dispatch in PARALLEL to eliminate waiting time
+    await Promise.all([
+      savePendingOtp(normalizedEmail, otp, googleProfile, expiresAt),
+      sendOtpEmail(googleProfile.email, otp, googleProfile.name, false).catch((emailErr) => {
+        console.warn('[Google Auth OTP Email Warning]:', emailErr.message);
+      }),
+    ]);
 
     return res.json({
       success: true,
@@ -305,6 +303,9 @@ router.post('/verify-otp', async (req, res) => {
       selectedProduct: targetProduct,
     });
 
+    // Record login event and increment workspace stats
+    await UserModel.recordLogin(user.id, targetProduct, 'google');
+
     // Generate authenticated JWT session token
     const token = generateToken({
       id: user.id,
@@ -356,9 +357,14 @@ router.post('/resend-otp', async (req, res) => {
     // Generate fresh OTP and reset window
     const newOtp = generateOtp();
     const newExpiresAt = Date.now() + 5 * 60 * 1000;
-    await savePendingOtp(normalizedEmail, newOtp, record.profile, newExpiresAt);
 
-    await sendOtpEmail(record.profile.email, newOtp, record.profile.name, true);
+    // Run database write and SMTP email dispatch in PARALLEL
+    await Promise.all([
+      savePendingOtp(normalizedEmail, newOtp, record.profile, newExpiresAt),
+      sendOtpEmail(record.profile.email, newOtp, record.profile.name, true).catch((emailErr) => {
+        console.warn('[Resend OTP Email Warning]:', emailErr.message);
+      }),
+    ]);
 
     return res.json({
       success: true,
@@ -402,7 +408,8 @@ router.post('/register', async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: 'An account with this email address already exists.',
+        accountAlreadyExists: true,
+        message: 'An account with this email address already exists. Please sign in instead.',
       });
     }
 
@@ -433,6 +440,11 @@ router.post('/register', async (req, res) => {
         name: newUser.name,
         role: newUser.role,
         selectedProduct: newUser.selectedProduct || selectedProduct,
+        totalLogins: newUser.totalLogins || 1,
+        commercialLogins: newUser.commercialLogins || 0,
+        residencyLogins: newUser.residencyLogins || 0,
+        daraLogins: newUser.daraLogins || 0,
+        auraLogins: newUser.auraLogins || 0,
         createdAt: newUser.createdAt,
       },
     });
@@ -465,9 +477,19 @@ router.post('/login', async (req, res) => {
     // Find user in Neo4j
     const user = await UserModel.findByEmail(email);
     if (!user) {
-      return res.status(401).json({
+      return res.status(404).json({
         success: false,
-        message: 'Invalid email or password.',
+        accountNotFound: true,
+        message: 'No account found with this email. Please sign up to create your account.',
+      });
+    }
+
+    // If account was created with Google (no password hash)
+    if (!user.password && user.provider === 'google') {
+      return res.status(400).json({
+        success: false,
+        isGoogleAccount: true,
+        message: 'This account was created with Google. Please click "Continue with Google" to sign in.',
       });
     }
 
@@ -476,13 +498,13 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password.',
+        message: 'Incorrect password. Please verify your password.',
       });
     }
 
-    // Update user's active product workspace in Neo4j
+    // Update user's active product workspace and track login counts in Neo4j
     const targetProduct = product || user.selectedProduct || 'ananda';
-    await UserModel.updateSelectedProduct(user.id, targetProduct);
+    const updatedUser = await UserModel.recordLogin(user.id, targetProduct, 'password');
 
     // Generate JWT token
     const token = generateToken({
@@ -501,6 +523,12 @@ router.post('/login', async (req, res) => {
         name: user.name,
         role: user.role,
         selectedProduct: targetProduct,
+        totalLogins: updatedUser?.totalLogins || user.totalLogins || 1,
+        commercialLogins: updatedUser?.commercialLogins || user.commercialLogins || 0,
+        residencyLogins: updatedUser?.residencyLogins || user.residencyLogins || 0,
+        daraLogins: updatedUser?.daraLogins || user.daraLogins || 0,
+        auraLogins: updatedUser?.auraLogins || user.auraLogins || 0,
+        lastLoginAt: updatedUser?.lastLoginAt || new Date().toISOString(),
         createdAt: user.createdAt,
       },
     });
@@ -509,6 +537,28 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Server error during login. Check Neo4j database connection.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /api/auth/workspace-stats
+ * @desc    Get aggregated login counts per product/workspace
+ * @access  Public
+ */
+router.get('/workspace-stats', async (req, res) => {
+  try {
+    const stats = await UserModel.getWorkspaceStats();
+    return res.json({
+      success: true,
+      stats,
+    });
+  } catch (error) {
+    console.error('[Auth workspace-stats Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve workspace statistics.',
       error: error.message,
     });
   }
