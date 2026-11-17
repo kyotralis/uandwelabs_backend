@@ -14,7 +14,12 @@ function getTransporter() {
   }
 
   transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
     auth: {
       user: emailUser,
       pass: emailPass,
