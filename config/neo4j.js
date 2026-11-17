@@ -52,14 +52,49 @@ export async function initNeo4j() {
       }
     }
 
-    // Ensure unique constraint on User email
+    // Ensure unique constraints on User email, User id, & OtpVerification email
     const session = getSession();
     try {
       await session.run(`
         CREATE CONSTRAINT user_email_unique IF NOT EXISTS
         FOR (u:User) REQUIRE u.email IS UNIQUE
       `);
-      console.log('[Neo4j] Schema constraint "user_email_unique" ensured');
+      await session.run(`
+        CREATE CONSTRAINT user_id_unique IF NOT EXISTS
+        FOR (u:User) REQUIRE u.id IS UNIQUE
+      `);
+      await session.run(`
+        CREATE CONSTRAINT otp_email_unique IF NOT EXISTS
+        FOR (o:OtpVerification) REQUIRE o.email IS UNIQUE
+      `);
+      console.log('[Neo4j] Schema constraints "user_email_unique", "user_id_unique" & "otp_email_unique" ensured');
+
+      // Migrate any existing users with non-conforming IDs (e.g. UUIDs) to user_uandwelabs_user<N>
+      try {
+        const unmigrated = await session.run(`
+          MATCH (u:User)
+          WHERE u.id IS NULL OR NOT u.id STARTS WITH 'user_uandwelabs_user'
+          RETURN u.email AS email, u.id AS oldId
+          ORDER BY u.createdAt ASC
+        `);
+        if (unmigrated && unmigrated.records.length > 0) {
+          for (let i = 0; i < unmigrated.records.length; i++) {
+            const email = unmigrated.records[i].get('email');
+            const newId = `user_uandwelabs_user${i + 1}`;
+            await session.run(`
+              MATCH (u:User { email: $email })
+              SET u.id = $newId
+            `, { email, newId });
+            console.log(`[Neo4j Migration] Migrated user ${email} to ${newId}`);
+          }
+          await session.run(`
+            MERGE (s:UserSequence { id: 'user_id_sequence' })
+            SET s.counter = $count
+          `, { count: unmigrated.records.length });
+        }
+      } catch (migErr) {
+        console.warn('[Neo4j Migration] Optional migration notice:', migErr.message);
+      }
     } finally {
       await session.close();
     }
