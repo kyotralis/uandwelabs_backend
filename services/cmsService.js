@@ -86,13 +86,6 @@ function sanitizeCmsData(data) {
   if (data.dara?.gallery && Array.isArray(data.dara.gallery) && data.dara.gallery.length > 2) {
     data.dara.gallery = data.dara.gallery.slice(0, 2);
   }
-  // Permanently eliminate legacy 'Purpose Over Noise' and paragraph subtitle from beliefs
-  if (
-    data.home?.beliefs?.items?.some(it => it.title === 'Purpose Over Noise') ||
-    data.home?.beliefs?.subtitle?.toLowerCase().includes('at uandwe labs, we believe')
-  ) {
-    data.home.beliefs = JSON.parse(JSON.stringify(DEFAULT_CMS_DATA.home.beliefs));
-  }
   return data;
 }
 
@@ -130,7 +123,7 @@ function writeLocalCmsData(data) {
 /**
  * Helper to enforce timeouts on external queries
  */
-function withTimeout(promise, ms = 2500) {
+function withTimeout(promise, ms = 8000) {
   return Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms)),
@@ -144,7 +137,7 @@ export async function getCmsContent() {
   ensureDataFile();
   const localData = readLocalCmsData();
 
-  // Try Neo4j first with a fast timeout (2500ms) so requests never hang
+  // Try Neo4j first with an 8000ms timeout for cold starts
   try {
     const records = await withTimeout(
       readQuery(
@@ -152,7 +145,7 @@ export async function getCmsContent() {
          RETURN c.payload AS payload, toString(c.updatedAt) AS updatedAt
          LIMIT 1`
       ),
-      2500
+      8000
     );
 
     if (records && records.length > 0) {
@@ -215,7 +208,7 @@ export async function updateCmsContent(nextData, updatedBy = 'admin') {
          RETURN c.id AS id`,
         { payload: payloadStr, updatedBy }
       ),
-      3500
+      10000
     );
     neo4jSaved = true;
     console.log('[CMS Service] Successfully synchronized CMS data to Neo4j');
