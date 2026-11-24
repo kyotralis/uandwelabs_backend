@@ -45,6 +45,20 @@ app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'UandWe Labs Backend API is live',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/api/health',
+      cms: '/api/cms',
+      auth: '/api/auth',
+    },
+  });
+});
+
 // Health & Status endpoint
 app.get('/api/health', (req, res) => {
   res.json({
