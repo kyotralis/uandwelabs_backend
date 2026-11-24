@@ -13,9 +13,9 @@ export const DEFAULT_CMS_DATA = {
       "twitter": "https://x.com/uandwelabs"
     },
     "footerTagline": "We bridge generative intelligence, environmental physics, and precision engineering to design sustainable, future-ready realities.",
-    "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795433842/uandwelabs/cms/uandwe_logo_1795433840415.png",
+    "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795505972/uandwelabs/cms/logo_1795505971242.png",
     "header": {
-      "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795433842/uandwelabs/cms/uandwe_logo_1795433840415.png",
+      "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795505972/uandwelabs/cms/logo_1795505971242.png",
       "companyName": "UANDWE Labs",
       "regionText": "India",
       "signInText": "Sign In",
@@ -31,7 +31,7 @@ export const DEFAULT_CMS_DATA = {
       "buttonText": "Explore Open Careers"
 },
     "footer": {
-      "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795433842/uandwelabs/cms/uandwe_logo_1795433840415.png",
+      "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795505972/uandwelabs/cms/logo_1795505971242.png",
       "companyName": "UANDWE Labs",
       "footerTagline": "We bridge generative intelligence, environmental physics, and precision engineering to design sustainable, future-ready realities.",
       "copyrightText": "© 2026 uandwelabs. All rights reserved.",
@@ -1213,7 +1213,9 @@ export const DEFAULT_CMS_DATA = {
   "termsOfService": {
     "contact": {
     "contactEmail": "legal@uandwelabs.com",
-    "label": "Compliance Desk",
+      "securityEmail": "security@uandwelabs.com",
+      "officeTitle": "Office of General Counsel & Regulatory Affairs",
+      "label": "Compliance Desk",
     "deskDescription": "Questions regarding master enterprise agreements (MSA) or custom hardware SLAs:"
 },
   "hero": {
