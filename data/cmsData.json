@@ -21,6 +21,12 @@
       "navAbout": "About Us",
       "navCareers": "Careers"
     },
+    "commonCta": {
+      "title": "Ready to Build What Truly Matters?",
+      "subtitle": "We are continually expanding our research and engineering branch in Bengaluru. Work alongside fluid aerodynamicists, sensor architects, and computational designers.",
+      "desc": "We are continually expanding our research and engineering branch in Bengaluru. Work alongside fluid aerodynamicists, sensor architects, and computational designers.",
+      "buttonText": "Explore Open Careers"
+    },
     "footer": {
       "logo": "https://res.cloudinary.com/fukpn05e/image/upload/v1795433842/uandwelabs/cms/uandwe_logo_1795433840415.png",
       "companyName": "UANDWE Labs",
@@ -32,12 +38,6 @@
       "contactEmail": "contact@uandwelabs.com",
       "contactPhone": "+91 80 4123 4567",
       "officeAddress": "Bengaluru Innovation Corridor, Karnataka, India"
-    },
-    "commonCta": {
-      "title": "Ready to Build What Truly Matters?",
-      "subtitle": "We are continually expanding our research and engineering branch in Bengaluru. Work alongside fluid aerodynamicists, sensor architects, and computational designers.",
-      "desc": "We are continually expanding our research and engineering branch in Bengaluru. Work alongside fluid aerodynamicists, sensor architects, and computational designers.",
-      "buttonText": "Explore Open Careers"
     }
   },
   "home": {
@@ -1159,6 +1159,8 @@
   "termsOfService": {
     "contact": {
       "contactEmail": "legal@uandwelabs.com",
+      "securityEmail": "security@uandwelabs.com",
+      "officeTitle": "Office of General Counsel & Regulatory Affairs",
       "label": "Compliance Desk",
       "deskDescription": "Questions regarding master enterprise agreements (MSA) or custom hardware SLAs:"
     },
