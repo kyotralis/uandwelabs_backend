@@ -10,7 +10,7 @@ if (process.env.CLOUDINARY_URL) {
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'fukpn05e',
     api_key: process.env.CLOUDINARY_API_KEY || '461777117981126',
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    api_secret: process.env.CLOUDINARY_API_SECRET || 'aP3TWt13tvvrLlVB_tNQT0l_ku4',
     secure: true,
   });
 }
