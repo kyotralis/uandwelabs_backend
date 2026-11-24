@@ -2,38 +2,48 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
+import cmsRoutes from './routes/cms.js';
 import { initNeo4j, closeNeo4j } from './config/neo4j.js';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
-// CORS configuration (allow Vite frontend and production domains)
+// CORS configuration (allow Vite frontend, admin, and all Vercel domains)
 const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:5173',
+  'http://localhost:5175',
   'https://uandwelabs.vercel.app',
   'https://uandwelabs-backend.vercel.app',
-  'uandwelabs-admin-rho.vercel.app
+  'https://uandwelabs-admin-rho.vercel.app'
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, postman)
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(null, true); // Dev mode: allow all local origins
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, postman)
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.includes('localhost')
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Dev/permissive fallback
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-passcode', 'Accept'],
+};
 
-// Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Body parsing middleware (25MB limit for CMS image uploads)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // Health & Status endpoint
 app.get('/api/health', (req, res) => {
@@ -47,6 +57,7 @@ app.get('/api/health', (req, res) => {
 
 // Mount Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/cms', cmsRoutes);
 
 // 404 handler for unknown routes
 app.use((req, res) => {
@@ -66,35 +77,39 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start Express server and connect to Neo4j
-const server = app.listen(PORT, async () => {
-  console.log(`===============================================`);
-  console.log(`🚀 UandWe Labs Backend running on port ${PORT}`);
-  console.log(`📡 Base API URL: http://localhost:${PORT}/api`);
-  console.log(`⚡ Neo4j URI: ${process.env.NEO4J_URI || 'neo4j://localhost:7687'}`);
-  console.log(`===============================================`);
+// Start Express server in standalone / local mode (avoid port binding on Vercel serverless)
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, async () => {
+    console.log(`===============================================`);
+    console.log(`🚀 UandWe Labs Backend running on port ${PORT}`);
+    console.log(`📡 Base API URL: http://localhost:${PORT}/api`);
+    console.log(`⚡ Neo4j URI: ${process.env.NEO4J_URI || 'neo4j://localhost:7687'}`);
+    console.log(`===============================================`);
 
-  // Initialize Neo4j connectivity
-  await initNeo4j();
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n[Server] Shutting down gracefully...');
-  await closeNeo4j();
-  server.close(() => {
-    console.log('[Server] HTTP service closed.');
-    process.exit(0);
+    // Initialize Neo4j connectivity
+    await initNeo4j().catch((err) => {
+      console.warn('[Neo4j] Initial connection warning:', err.message);
+    });
   });
-});
 
-process.on('SIGTERM', async () => {
-  console.log('\n[Server] Terminating gracefully...');
-  await closeNeo4j();
-  server.close(() => {
-    process.exit(0);
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\n[Server] Shutting down gracefully...');
+    await closeNeo4j().catch(() => {});
+    server.close(() => {
+      console.log('[Server] HTTP service closed.');
+      process.exit(0);
+    });
   });
-});
+
+  process.on('SIGTERM', async () => {
+    console.log('\n[Server] Terminating gracefully...');
+    await closeNeo4j().catch(() => {});
+    server.close(() => {
+      process.exit(0);
+    });
+  });
+}
 
 export default app;
 
