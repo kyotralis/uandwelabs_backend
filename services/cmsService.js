@@ -20,11 +20,15 @@ const ADMIN_PUBLIC_DIR = path.resolve(__dirname, '../../../admin/public');
  * Ensure data directory and fallback JSON file exist
  */
 function ensureDataFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(CMS_JSON_PATH)) {
-    fs.writeFileSync(CMS_JSON_PATH, JSON.stringify(DEFAULT_CMS_DATA, null, 2), 'utf8');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(CMS_JSON_PATH)) {
+      fs.writeFileSync(CMS_JSON_PATH, JSON.stringify(DEFAULT_CMS_DATA, null, 2), 'utf8');
+    }
+  } catch (err) {
+    // Read-only filesystem in Vercel/serverless environments - ignore safely
   }
 }
 
@@ -98,13 +102,15 @@ function sanitizeCmsData(data) {
 function readLocalCmsData() {
   ensureDataFile();
   try {
-    const raw = fs.readFileSync(CMS_JSON_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    return sanitizeCmsData(deepMerge(DEFAULT_CMS_DATA, parsed));
+    if (fs.existsSync(CMS_JSON_PATH)) {
+      const raw = fs.readFileSync(CMS_JSON_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      return sanitizeCmsData(deepMerge(DEFAULT_CMS_DATA, parsed));
+    }
   } catch (err) {
     console.error('[CMS Service] Error reading local CMS file:', err.message);
-    return sanitizeCmsData(DEFAULT_CMS_DATA);
   }
+  return sanitizeCmsData(DEFAULT_CMS_DATA);
 }
 
 /**
