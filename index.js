@@ -15,6 +15,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://uandwelabs.vercel.app',
   'https://uandwelabs-backend.vercel.app',
+  'uandwelabs-admin-rho.vercel.app
 ];
 
 app.use(
